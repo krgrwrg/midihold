@@ -8,6 +8,7 @@
 #include <string>
 #include <cstring>
 #include <sstream>
+#include <time.h>
 #include <rtmidi/RtMidi.h>
 
 using namespace std;
@@ -20,29 +21,53 @@ class hold_controller {
  public:
   static const string keys[];
 
+  typedef enum { DEBUG, INFO, WARNING, ERROR } log_levels_t;
+  static const string log_levels[];
+
   // limits to make all posible values as square
   // highest midi note is G8 ( 127 ) but higher tones missing
   // to avoid disfunction of controller, last octave is disabled
   static const uint max_octave = 9;
   static const uint max_note = 119;
 
-  typedef vector<uint8_t> midi_msg_t;
-  typedef void (*f_midi_send_t);
+  typedef void (*f_midi_send_t) (vector<uint8_t> * message);
+  typedef void (*f_logger_t) (log_levels_t priority, const char * message);
 
  private:
-  uint8_t d_note = 0;
-  uint8_t d_key = 0;
-  uint8_t d_octave = 0;
-  bool d_on = false;
+  uint8_t d_active_note = 0;   // midi note which is playing just now
+  uint8_t d_note = 0;          // midi note which is selected
+  uint8_t d_key = 0;           // key which is selected ( C=0 )
+  uint8_t d_octave = 0;        // ocatave which is selected  ( -2 octave = 0 )
+  bool d_on = false;           // on-off switch
 
+  f_midi_send_t midi_send_callback = nullptr;
+  f_logger_t    logger_callback = nullptr;
+
+  // midi control private methods
+  // - - - - - - - - - - - -
+  void play_midi(uint8_t note);  // start selected note playback
+  void stop_midi(uint8_t note);  // stop selected note playback
+  void reset_midi();             // stop all notes on device
+
+  // interface private methods
+  // - - - - - - - - - - - -
+  void change_note();
   bool set_key_octave(uint8_t k, uint8_t o);
 
  public:
+
+  void set_midi_send_callback(f_midi_send_t cb) { midi_send_callback = cb; }
+  void set_logger_callback(f_logger_t cb) { logger_callback = cb; }
+
+
+  // interface methods
+  // - - - - - - - - - - - -
+  void reset();               // use only for debug purpose
   bool set_note(uint8_t n);
 
-  void on() { d_on = true; }
-  void off() { d_on = true; }
-  bool is_on() { return d_on; }
+  void on();
+  void off();
+  bool is_on() const { return d_on; }
 
   bool set_key(uint8_t k) { return set_key_octave(k, d_octave); }
   bool set_octave(uint8_t o) { return set_key_octave(d_key, o); }
@@ -60,6 +85,8 @@ class hold_controller {
 
   const string key_human() const { return keys[d_key];  }
   int octave_human() const { return d_octave-2; }
+
+  string get_status() const;
 };
 
 // - - - - - - - - - - - - - - - - - - - -
@@ -70,12 +97,17 @@ const string hold_controller::keys[] = {
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "B#"
 };
 
+const string hold_controller::log_levels[] = {
+ "DEBUG", "INFO", "WARNING", "ERROR"
+};
+
 bool hold_controller::set_key_octave(uint8_t k, uint8_t o)
 {
   if(k < 12 && o <= max_octave ) {
     d_key = k;
     d_octave = o;
     d_note = d_key + ( 12 * d_octave );
+    change_note();
     return true;
   }
   return false;
@@ -87,110 +119,166 @@ bool hold_controller::set_note(uint8_t n)
     d_note = n;
     d_octave = d_note / 12;
     d_key =  d_note % 12;
+    change_note();
     return true;
   }
   return false;
 }
 
-
-// - - - - - - - - - - - - - - - - - - - -
-// structs
-// - - - - - - - - - - - - - - - - - - - -
-typedef struct {
-  hold_controller ctrl;
-  uint8_t note_active = 0;
-
-  void reset() {
-    ctrl.set_note(0);
-    ctrl.off();
-    note_active = 0;
-  }
-} midi_mem_t;
-
-// global variable
-midi_mem_t midi_mem;
-
-// - - - - - - - - - - - - - - - - - - - -
-// midi-out implementation
-// - - - - - - - - - - - - - - - - - - - -
-void printControllerStatus()
+string hold_controller::get_status() const
 {
-  hold_controller *co = & midi_mem.ctrl;
+  stringstream ss;
 
-  cout << "key: " << co->key_human()
-       << " [" << (int)co->key() << "]"
-       << " oct: " << co->octave_human()
-       << " [" << (int)co->octave() << "]"
-       << " note: [" << (int)co->note() << "]"
-       << " is_on: [" << (int)co->is_on() << "]"
-       << endl;
+  ss << "key: " << key_human()
+     << " [" << (int)key() << "]"
+     << " oct: " << octave_human()
+     << " [" << (int)octave() << "]"
+     << " note: [" << (int)note() << "]"
+     << " is_on: [" << (int)is_on() << "]"
+  ;
+  
+  return ss.str();
 }
 
-void playMidi(RtMidiOut * midiout, uint8_t n)
+void hold_controller::play_midi(uint8_t note)
 {
-  std::cout << "playMidi : " << (int)n << endl;
+  if (logger_callback) {
+    stringstream ss;
+    ss << "play_midi: " << (int) note;
+    logger_callback(DEBUG, ss.str().c_str());
+  }
+
   std::vector<uint8_t> message(3);
   message[0] = 144;
-  message[1] = n;
+  message[1] = note;
   message[2] = 90;
-  midiout->sendMessage( &message );
+  if(midi_send_callback)
+    midi_send_callback(&message);
 }
 
-void stopMidi(RtMidiOut * midiout, uint8_t n)
+void hold_controller::stop_midi(uint8_t note)
 {
-  std::cout << "stopMidi : " << (int)n << endl;
+  if (logger_callback) {
+    stringstream ss;
+    ss << "stop_midi: " << (int) note;
+    logger_callback(DEBUG, ss.str().c_str());
+  }
+
   std::vector<uint8_t> message(3);
   message[0] = 128;
-  message[1] = n;
+  message[1] = note;
   message[2] = 40;
-  midiout->sendMessage( &message );
+  if(midi_send_callback)
+    midi_send_callback(&message);
 }
 
-void resetMidi(RtMidiOut * midiout)
+void hold_controller::reset_midi()
 {
-  std::cout << "resetMidi" << endl;
-  midi_mem.reset();
+  if (logger_callback) {
+    logger_callback(DEBUG, "reset_midi");
+  }
+
   std::vector<uint8_t> message(3);
   message[0] = 128;
   message[2] = 40;
   for (uint8_t i=0; i<=127; i++){
     message[1] = i;
-    midiout->sendMessage( &message );
+    if(midi_send_callback)
+      midi_send_callback(&message);
   }
 }
 
-void doHoldOn(RtMidiOut * midiout)
+void hold_controller::on()
 {
-  std::cout << "doHoldOn" << endl;
-  midi_mem.ctrl.on();
-  playMidi(midiout, midi_mem.ctrl.note());
-  midi_mem.note_active = midi_mem.ctrl.note();
-  printControllerStatus();
+  if(logger_callback)
+    logger_callback(DEBUG, "on");
+
+  d_on = true;
+  d_active_note = d_note;
+  play_midi(d_active_note);
+
+  if(logger_callback)
+    logger_callback(INFO, get_status().c_str());
 }
 
-void doHoldOff(RtMidiOut * midiout)
+void hold_controller::off()
 {
-  std::cout << "doHoldOff" << endl;
-  if(midi_mem.ctrl.is_on()) {
-    stopMidi(midiout, midi_mem.note_active);
-    midi_mem.ctrl.off();
-  }
-  printControllerStatus();
+  if(logger_callback)
+    logger_callback(DEBUG, "off");
+
+  stop_midi(d_active_note);
+  d_on = false;
+
+  if(logger_callback)
+    logger_callback(INFO, get_status().c_str());
 }
 
-void doMidiNote(RtMidiOut * midiout)
+void hold_controller::change_note()
 {
-
-  if (midi_mem.ctrl.is_on())
+  if(logger_callback)
+    logger_callback(DEBUG, "change_note");
+  
+  if(is_on())
   {
-    playMidi(midiout, midi_mem.ctrl.note());
-    stopMidi(midiout, midi_mem.note_active);
-
-    midi_mem.note_active = midi_mem.ctrl.note();
+    //to avoid silence start playing before stopping previous note
+    play_midi(d_note);
+    stop_midi(d_active_note);
+    d_active_note = d_note;
   }
 
-  printControllerStatus();
+  if(logger_callback)
+    logger_callback(INFO, get_status().c_str());
 }
+
+void hold_controller::reset()
+{
+  if(logger_callback)
+    logger_callback(DEBUG, "reset");
+
+  off();
+  set_note(0);
+  d_active_note = d_note;
+  reset_midi();
+
+  if(logger_callback)
+    logger_callback(DEBUG, get_status().c_str());
+}
+
+// - - - - - - - - - - - - - - - - - - - -
+// global singletons
+// - - - - - - - - - - - - - - - - - - - -
+hold_controller g_ctrl;
+RtMidiOut g_midiout;
+
+
+// - - - - - - - - - - - - - - - - - - - -
+// callbacks
+// - - - - - - - - - - - - - - - - - - - -
+
+const std::string gui_dtm()
+{
+  time_t     now = time(0);
+  struct tm  tstruct;
+  char       buf[80];
+  tstruct = *localtime(&now);
+  // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
+  // for more information about date/time format
+  strftime(buf, sizeof(buf), "%Y-%m-%d %X", &tstruct);
+
+  return buf;
+}
+
+void ui_midi_send(vector<uint8_t> * message)
+{
+  g_midiout.sendMessage(message);
+}
+
+void ui_log(hold_controller::log_levels_t priority, const char * message)
+{
+  const string & p = hold_controller::log_levels[priority];
+  printf("> [ %s ]%8s :: %s\n", gui_dtm().c_str(), p.c_str(), message);
+}
+
 
 // - - - - - - - - - - - - - - - - - - - -
 // user interface
@@ -198,7 +286,11 @@ void doMidiNote(RtMidiOut * midiout)
 bool parseMidiNote(uint8_t * out_note, const string & key, const string & oct)
 {
 
-  cout << "parseMidiNote: key:" << key << " oct: " << oct << endl;
+  {
+    stringstream ss;
+    ss << "parseMidiNote: key:" << key << " oct: " << oct;
+    ui_log(hold_controller::DEBUG, ss.str().c_str());
+  }
 
   if(key == "") {
     cerr << "Key not set !" << endl;
@@ -251,115 +343,87 @@ bool parseMidiNote(uint8_t * out_note, const string & key, const string & oct)
   if (o > 0)
     n += (o * 12);
 
-  cout << "key: " << key 
+  {
+    stringstream ss;
+    ss << "parseMidiNote :: key: " << key 
        << " [" << (int)n0 << "]"
        << " oct: " << oct
        << " [" << o << "]"
        << " note: [" << (int)n << "]"
-       << endl;
-  
-  
+    ;
+    ui_log(hold_controller::DEBUG, ss.str().c_str());
+  }
+
   *out_note = n;
 
   return true;
 }
 
-void doNote(RtMidiOut * midiout, const string & key, const string & oct)
+void doNote(const string & key, const string & oct)
 {
-  cout << "doNote: key:" << key << " oct: " << oct << endl;
+  stringstream ss;
+  ss << "doNote: key:" << key << " oct: " << oct;
+  ui_log(hold_controller::DEBUG, ss.str().c_str());
 
   uint8_t n;
   if(parseMidiNote(&n, key, oct)){
-    midi_mem.ctrl.set_note(n);
-    doMidiNote(midiout);
+    g_ctrl.set_note(n);
   }
 }
 
-void doNoteUp(RtMidiOut * midiout)
+void doNoteUp()
 {
+  if (!g_ctrl.increment_note())
+    ui_log(hold_controller::WARNING, "doNoteUp = MAX");
+}
 
-  if (!midi_mem.ctrl.increment_note()) {
-    cout << "doNoteUp = MAX" << endl;
-    return;
+void doNoteDown()
+{
+  if (!g_ctrl.decrement_note())
+    ui_log(hold_controller::WARNING, "doNoteDown = MIN");
+}
+
+void doKey(uint8_t key)
+{
+  if (!g_ctrl.set_key(key)) {
+    stringstream ss;
+    ss << "doKey - invalid value: " << (int)key;
+    ui_log(hold_controller::WARNING, ss.str().c_str());
   }
- 
-  doMidiNote(midiout);
 }
 
-void doNoteDown(RtMidiOut * midiout)
-{
 
- if (!midi_mem.ctrl.decrement_note()) {
-   cout << "doNoteDown = MIN" << endl;
-   return;
- }
- 
- doMidiNote(midiout);
+void doKeyUp()
+{
+  if (!g_ctrl.increment_key())
+    ui_log(hold_controller::WARNING, "doKeyUp = MAX");
 }
 
-void doKey(RtMidiOut * midiout, uint8_t key)
+void doKeyDown()
 {
-  if (!midi_mem.ctrl.set_key(key)) {
-    cout << "doKey - invalid value: " << (int)key << endl;
-    return;
+  if (!g_ctrl.decrement_key())
+    ui_log(hold_controller::WARNING, "doKeyDown = MIN");
+}
+
+void doOct(uint8_t oct)
+{
+  if (!g_ctrl.set_octave(oct)) {
+    stringstream ss;
+    ss << "doOct - invalid value: " << (int)oct << endl;
+    ui_log(hold_controller::WARNING, ss.str().c_str());
   }
-
-  doMidiNote(midiout);
 }
 
-
-void doKeyUp(RtMidiOut * midiout)
+void doOctUp()
 {
-
-  if (!midi_mem.ctrl.increment_key()) {
-     cout << "doKeyUp = MAX" << endl;
-     return;
-  }
-
-  doMidiNote(midiout);
+  if (!g_ctrl.increment_octave())
+    ui_log(hold_controller::WARNING, "doOctUp = MAX");
 }
 
-void doKeyDown(RtMidiOut * midiout)
+void doOctDown()
 {
-
-  if (!midi_mem.ctrl.decrement_key()) {
-    cout << "doKeyDown = MIN" << endl;
-    return;
-  }
- 
-  doMidiNote(midiout);
-}
-
-void doOct(RtMidiOut * midiout, uint8_t oct)
-{
-  if (!midi_mem.ctrl.set_octave(oct)) {
-    cout << "doOct - invalid value: " << (int)oct << endl;
-    return;
-  }
- 
-  doMidiNote(midiout);
-}
-
-void doOctUp(RtMidiOut * midiout)
-{
-
-  if (!midi_mem.ctrl.increment_octave()) {
-    cout << "doOctUp = MAX" << endl;
-    return;
-  }
- 
-  doMidiNote(midiout);
-}
-
-void doOctDown(RtMidiOut * midiout)
-{
-
- if (!midi_mem.ctrl.decrement_octave()) {
-   cout << "doOctDown = MIN" << endl;
-   return;
- }
- 
-  doMidiNote(midiout);
+  if (!g_ctrl.decrement_octave())
+    ui_log(hold_controller::WARNING, "doOctDown = MIN");
 }
 
 
@@ -386,24 +450,17 @@ void help()
 
 int listPorts()
 {
-
-  int ec = 0;
-  RtMidiOut *midiout = new RtMidiOut();
   // Check available ports.
-  uint nPorts = midiout->getPortCount();
+  uint nPorts = g_midiout.getPortCount();
   if ( nPorts == 0 ) {
     cerr << "No ports available!" << endl;
-    ec = 1;
-    goto cleanup;
+    return 1;
   }
   for(uint i=0; i < nPorts; i++) {
-    cout << "port[" << i << "]" << midiout->getPortName(i) << endl;
+    cout << "port[" << i << "]" << g_midiout.getPortName(i) << endl;
   }
 
-  // Clean up
-  cleanup:
-    delete midiout;
-    return ec;
+  return 0;
 }
 
 void tokTok(const string & str, vector<string> & vect, char delimiter)
@@ -417,7 +474,7 @@ void tokTok(const string & str, vector<string> & vect, char delimiter)
   }
 }
 
-bool doCmd(RtMidiOut * midiout, const string & cmd)
+bool doCmd(const string & cmd)
 {
   if(cmd == "")
     return false;
@@ -436,56 +493,56 @@ bool doCmd(RtMidiOut * midiout, const string & cmd)
   }
   else if(cmd == "print")
   {
-    printControllerStatus();
+    cout << g_ctrl.get_status() << endl;
   }
   else if(cmd == "reset")
   {
-    resetMidi(midiout);
+    g_ctrl.reset();
   }
   else if(cmd == "on")
   {
-    doHoldOn(midiout);
+    g_ctrl.on();
   }
   else if(cmd == "off")
   {
-    doHoldOff(midiout);
+    g_ctrl.off();
   }
   else if(cmd == "note+")
   {
-    doNoteUp(midiout);
+    doNoteUp();
   }
   else if(cmd == "note-")
   {
-    doNoteDown(midiout);
+    doNoteDown();
   }
   else if(cmd == "key+")
   {
-    doKeyUp(midiout);
+    doKeyUp();
   }
   else if(cmd == "key-")
   {
-    doKeyDown(midiout);
+    doKeyDown();
   }
   else if(cmd == "oct+")
   {
-    doOctUp(midiout);
+    doOctUp();
   }
   else if(cmd == "oct-")
   {
-    doOctDown(midiout);
+    doOctDown();
   }
   else if(args.size() > 0 && args[0] == "note")
   {
     const string note = (args.size() > 1) ? args[1] : "";
     const string oct = (args.size() > 2) ? args[2] : "";
-    doNote(midiout, note, oct);
+    doNote(note, oct);
   }
   else if(args.size() > 1 && args[0] == "key")
   {
     try {
       uint key = stoul(args[1]);
       if (key <= 0xFF) {
-        doKey(midiout, key);
+        doKey(key);
       } else {
         cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
       }
@@ -498,7 +555,7 @@ bool doCmd(RtMidiOut * midiout, const string & cmd)
     try {
       uint oct = stoul(args[1]);
       if (oct <= 0xFF) {
-        doOct(midiout, oct);
+        doOct(oct);
       } else {
         cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
       }
@@ -514,34 +571,31 @@ bool doCmd(RtMidiOut * midiout, const string & cmd)
 }
 
 int readStdIn(uint port) {
-  int ec=0;
-  RtMidiOut *midiout = new RtMidiOut();
   // Check available ports.
-  uint nPorts = midiout->getPortCount();
+  uint nPorts = g_midiout.getPortCount();
   if ( port >= nPorts ) {
     cerr << "Selected port [" << port << "] nPorts[ " << nPorts << "]" << endl;
-    ec = 1;
-    goto cleanup;
+    return 1;
   }
   cout << " Open port [" << port << "] :"
-       << midiout->getPortName( port )
+       << g_midiout.getPortName( port )
        << endl;
-  midiout->openPort( port );
+  g_midiout.openPort( port );
 
   for (string line; getline(cin, line);) {
-    if (doCmd(midiout, line))
+    if (doCmd(line))
       break;
   }
 
-
-  // Clean up
-  cleanup:
-    delete midiout;
-    return ec;
+  return 0;
 
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
+  g_ctrl.set_midi_send_callback(ui_midi_send);
+  g_ctrl.set_logger_callback(ui_log);
+
   try {
     if(argc == 1) {
       return listPorts();
