@@ -39,7 +39,7 @@ class hold_controller {
       d_note = d_key + ( 12 * d_octave );
       return true;
     }
-		return false;
+    return false;
   }
 
  public:
@@ -47,8 +47,8 @@ class hold_controller {
   {
     if (n <= max_note ) {
       d_note = n;
-			d_octave = d_note / 12;
-			d_key =  d_note % 12;
+      d_octave = d_note / 12;
+      d_key =  d_note % 12;
       return true;
     }
     return false;
@@ -77,7 +77,7 @@ class hold_controller {
 };
 
 const string hold_controller::keys[] = {
-	"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "B#"
+  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "B#"
 };
 
 typedef struct {
@@ -138,8 +138,8 @@ void resetMidi(RtMidiOut * midiout)
   message[0] = 128;
   message[2] = 40;
   for (unsigned char i=0; i<=127; i++){
-		message[1] = i;
-		midiout->sendMessage( &message );
+    message[1] = i;
+    midiout->sendMessage( &message );
   }
 }
 
@@ -147,8 +147,8 @@ void doHoldOn(RtMidiOut * midiout)
 {
   std::cout << "doHoldOn" << endl;
   midi_mem.ctrl.on();
-	playMidi(midiout, midi_mem.ctrl.note());
-	midi_mem.note_active = midi_mem.ctrl.note();
+  playMidi(midiout, midi_mem.ctrl.note());
+  midi_mem.note_active = midi_mem.ctrl.note();
   printControllerStatus();
 }
 
@@ -156,8 +156,8 @@ void doHoldOff(RtMidiOut * midiout)
 {
   std::cout << "doHoldOff" << endl;
   if(midi_mem.ctrl.is_on()) {
-  	stopMidi(midiout, midi_mem.note_active);
-		midi_mem.ctrl.off();
+    stopMidi(midiout, midi_mem.note_active);
+    midi_mem.ctrl.off();
   }
   printControllerStatus();
 }
@@ -165,13 +165,13 @@ void doHoldOff(RtMidiOut * midiout)
 void doMidiNote(RtMidiOut * midiout)
 {
 
-	if (midi_mem.ctrl.is_on())
-	{
-		playMidi(midiout, midi_mem.ctrl.note());
-		stopMidi(midiout, midi_mem.note_active);
+  if (midi_mem.ctrl.is_on())
+  {
+    playMidi(midiout, midi_mem.ctrl.note());
+    stopMidi(midiout, midi_mem.note_active);
 
-		midi_mem.note_active = midi_mem.ctrl.note();
-	}
+    midi_mem.note_active = midi_mem.ctrl.note();
+  }
 
   printControllerStatus();
 }
@@ -198,7 +198,7 @@ bool parseMidiNote(unsigned char * out_note, const string & key, const string & 
   int o;
   try {
     o = stol(oct.c_str());
-	} catch (invalid_argument const& ex) {
+  } catch (invalid_argument const& ex) {
     cerr << "Invalid octave: " << oct << endl;
     return false;
   }
@@ -274,7 +274,7 @@ void doNoteDown(RtMidiOut * midiout)
 {
 
  if (!midi_mem.ctrl.decrement_note()) {
-	 cout << "doNoteDown = MIN" << endl;
+   cout << "doNoteDown = MIN" << endl;
    return;
  }
  
@@ -296,7 +296,7 @@ void doKeyUp(RtMidiOut * midiout)
 {
 
   if (!midi_mem.ctrl.increment_key()) {
-	   cout << "doKeyUp = MAX" << endl;
+     cout << "doKeyUp = MAX" << endl;
      return;
   }
 
@@ -307,7 +307,7 @@ void doKeyDown(RtMidiOut * midiout)
 {
 
   if (!midi_mem.ctrl.decrement_key()) {
-	  cout << "doKeyDown = MIN" << endl;
+    cout << "doKeyDown = MIN" << endl;
     return;
   }
  
@@ -317,7 +317,7 @@ void doKeyDown(RtMidiOut * midiout)
 void doOct(RtMidiOut * midiout, unsigned char oct)
 {
   if (!midi_mem.ctrl.set_octave(oct)) {
-	  cout << "doOct - invalid value: " << (int)oct << endl;
+    cout << "doOct - invalid value: " << (int)oct << endl;
     return;
   }
  
@@ -328,7 +328,7 @@ void doOctUp(RtMidiOut * midiout)
 {
 
   if (!midi_mem.ctrl.increment_octave()) {
-	  cout << "doOctUp = MAX" << endl;
+    cout << "doOctUp = MAX" << endl;
     return;
   }
  
@@ -392,7 +392,7 @@ int listPorts()
 
 void tokTok(const string & str, vector<string> & vect, char delimiter)
 {
-	stringstream ss(str);
+  stringstream ss(str);
 
   for (string i; ss >> i;) {
     vect.push_back(i);    
@@ -406,8 +406,8 @@ bool doCmd(RtMidiOut * midiout, const string & cmd)
   if(cmd == "")
     return false;
 
-	vector<string> args;
-	tokTok(cmd, args, ' ');
+  vector<string> args;
+  tokTok(cmd, args, ' ');
 
   if(cmd == "exit")
   {
@@ -466,28 +466,28 @@ bool doCmd(RtMidiOut * midiout, const string & cmd)
   }
   else if(args.size() > 1 && args[0] == "key")
   {
-		try {
-			unsigned int key = stoul(args[1]);
+    try {
+      unsigned int key = stoul(args[1]);
       if (key <= 0xFF) {
-				doKey(midiout, key);
+        doKey(midiout, key);
       } else {
-			  cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
+        cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
       }
-		} catch (invalid_argument const& ex) {
-			cerr << "Argument  '" << args[1] << "' is not unsigned integer" << endl;
+    } catch (invalid_argument const& ex) {
+      cerr << "Argument  '" << args[1] << "' is not unsigned integer" << endl;
     }
   }
   else if(args.size() > 1 && args[0] == "oct")
   {
-		try {
-			unsigned int oct = stoul(args[1]);
+    try {
+      unsigned int oct = stoul(args[1]);
       if (oct <= 0xFF) {
-				doOct(midiout, oct);
+        doOct(midiout, oct);
       } else {
-			  cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
+        cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
       }
-		} catch (invalid_argument const& ex) {
-			cerr << "Argument  '" << args[1] << "' is not unsigned integer" << endl;
+    } catch (invalid_argument const& ex) {
+      cerr << "Argument  '" << args[1] << "' is not unsigned integer" << endl;
     }
   }
   else
@@ -504,7 +504,7 @@ int readStdIn(unsigned int port) {
   unsigned int nPorts = midiout->getPortCount();
   if ( port >= nPorts ) {
     cerr << "Selected port [" << port << "] nPorts[ " << nPorts << "]" << endl;
-	  ec = 1;
+    ec = 1;
     goto cleanup;
   }
   cout << " Open port [" << port << "] :"
@@ -512,9 +512,9 @@ int readStdIn(unsigned int port) {
        << endl;
   midiout->openPort( port );
 
-	for (string line; getline(cin, line);) {
+  for (string line; getline(cin, line);) {
     if (doCmd(midiout, line))
-			break;
+      break;
   }
 
 
@@ -530,7 +530,7 @@ int main(int argc, char **argv) {
     if(argc == 1) {
       return listPorts();
     } else {
-			try {
+      try {
         unsigned int port = stoul(argv[1]);
         return readStdIn(port);
       } catch (invalid_argument const& ex) {
