@@ -3,246 +3,17 @@
 // all rights w dupie
 
 #include <unistd.h>
-#include <stdint.h>
 #include <iostream>
-#include <string>
 #include <cstring>
 #include <sstream>
 #include <time.h>
 #include <rtmidi/RtMidi.h>
 
+#include "hold_controller.h"
+
 using namespace std;
 
-// - - - - - - - - - - - - - - - - - - - -
-// interface
-// - - - - - - - - - - - - - - - - - - - -
-
-class hold_controller {
- public:
-  static const string keys[];
-
-  typedef enum { DEBUG, INFO, WARNING, ERROR } log_levels_t;
-  static const string log_levels[];
-
-  // limits to make all posible values as square
-  // highest midi note is G8 ( 127 ) but higher tones missing
-  // to avoid disfunction of controller, last octave is disabled
-  static const uint max_octave = 9;
-  static const uint max_note = 119;
-
-  typedef void (*f_midi_send_t) (vector<uint8_t> * message);
-  typedef void (*f_logger_t) (log_levels_t priority, const char * message);
-
- private:
-  uint8_t d_active_note = 0;   // midi note which is playing just now
-  uint8_t d_note = 0;          // midi note which is selected
-  uint8_t d_key = 0;           // key which is selected ( C=0 )
-  uint8_t d_octave = 0;        // ocatave which is selected  ( -2 octave = 0 )
-  bool d_on = false;           // on-off switch
-
-  f_midi_send_t midi_send_callback = nullptr;
-  f_logger_t    logger_callback = nullptr;
-
-  // midi control private methods
-  // - - - - - - - - - - - -
-  void play_midi(uint8_t note);  // start selected note playback
-  void stop_midi(uint8_t note);  // stop selected note playback
-  void reset_midi();             // stop all notes on device
-
-  // interface private methods
-  // - - - - - - - - - - - -
-  void change_note();
-  bool set_key_octave(uint8_t k, uint8_t o);
-
- public:
-
-  void set_midi_send_callback(f_midi_send_t cb) { midi_send_callback = cb; }
-  void set_logger_callback(f_logger_t cb) { logger_callback = cb; }
-
-
-  // interface methods
-  // - - - - - - - - - - - -
-  void reset();               // use only for debug purpose
-  bool set_note(uint8_t n);
-
-  void on();
-  void off();
-  bool is_on() const { return d_on; }
-
-  bool set_key(uint8_t k) { return set_key_octave(k, d_octave); }
-  bool set_octave(uint8_t o) { return set_key_octave(d_key, o); }
-
-  bool increment_note() { return set_note(d_note+1); }
-  bool decrement_note() { return (d_note > 0 ) ? set_note(d_note-1) : false; }
-  bool increment_key() { return set_key(d_key+1); }
-  bool decrement_key() { return (d_key > 0 ) ? set_key(d_key-1) : false; }
-  bool increment_octave() { return set_octave(d_octave+1); }
-  bool decrement_octave() { return (d_octave > 0 ) ? set_octave(d_octave-1) : false; }
-
-  uint8_t note() const { return d_note; }
-  uint8_t key() const { return d_key; }
-  uint8_t octave() const { return d_octave; }
-
-  const string key_human() const { return keys[d_key];  }
-  int octave_human() const { return d_octave-2; }
-
-  string get_status() const;
-};
-
-// - - - - - - - - - - - - - - - - - - - -
-// implementation
-// - - - - - - - - - - - - - - - - - - - -
-
-const string hold_controller::keys[] = {
-  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "B#"
-};
-
-const string hold_controller::log_levels[] = {
- "DEBUG", "INFO", "WARNING", "ERROR"
-};
-
-bool hold_controller::set_key_octave(uint8_t k, uint8_t o)
-{
-  if(k < 12 && o <= max_octave ) {
-    d_key = k;
-    d_octave = o;
-    d_note = d_key + ( 12 * d_octave );
-    change_note();
-    return true;
-  }
-  return false;
-}
-
-bool hold_controller::set_note(uint8_t n)
-{
-  if (n <= max_note ) {
-    d_note = n;
-    d_octave = d_note / 12;
-    d_key =  d_note % 12;
-    change_note();
-    return true;
-  }
-  return false;
-}
-
-string hold_controller::get_status() const
-{
-  stringstream ss;
-
-  ss << "key: " << key_human()
-     << " [" << (int)key() << "]"
-     << " oct: " << octave_human()
-     << " [" << (int)octave() << "]"
-     << " note: [" << (int)note() << "]"
-     << " is_on: [" << (int)is_on() << "]"
-  ;
-  
-  return ss.str();
-}
-
-void hold_controller::play_midi(uint8_t note)
-{
-  if (logger_callback) {
-    stringstream ss;
-    ss << "play_midi: " << (int) note;
-    logger_callback(DEBUG, ss.str().c_str());
-  }
-
-  std::vector<uint8_t> message(3);
-  message[0] = 144;
-  message[1] = note;
-  message[2] = 90;
-  if(midi_send_callback)
-    midi_send_callback(&message);
-}
-
-void hold_controller::stop_midi(uint8_t note)
-{
-  if (logger_callback) {
-    stringstream ss;
-    ss << "stop_midi: " << (int) note;
-    logger_callback(DEBUG, ss.str().c_str());
-  }
-
-  std::vector<uint8_t> message(3);
-  message[0] = 128;
-  message[1] = note;
-  message[2] = 40;
-  if(midi_send_callback)
-    midi_send_callback(&message);
-}
-
-void hold_controller::reset_midi()
-{
-  if (logger_callback) {
-    logger_callback(DEBUG, "reset_midi");
-  }
-
-  std::vector<uint8_t> message(3);
-  message[0] = 128;
-  message[2] = 40;
-  for (uint8_t i=0; i<=127; i++){
-    message[1] = i;
-    if(midi_send_callback)
-      midi_send_callback(&message);
-  }
-}
-
-void hold_controller::on()
-{
-  if(logger_callback)
-    logger_callback(DEBUG, "on");
-
-  d_on = true;
-  d_active_note = d_note;
-  play_midi(d_active_note);
-
-  if(logger_callback)
-    logger_callback(INFO, get_status().c_str());
-}
-
-void hold_controller::off()
-{
-  if(logger_callback)
-    logger_callback(DEBUG, "off");
-
-  stop_midi(d_active_note);
-  d_on = false;
-
-  if(logger_callback)
-    logger_callback(INFO, get_status().c_str());
-}
-
-void hold_controller::change_note()
-{
-  if(logger_callback)
-    logger_callback(DEBUG, "change_note");
-  
-  if(is_on())
-  {
-    //to avoid silence start playing before stopping previous note
-    play_midi(d_note);
-    stop_midi(d_active_note);
-    d_active_note = d_note;
-  }
-
-  if(logger_callback)
-    logger_callback(INFO, get_status().c_str());
-}
-
-void hold_controller::reset()
-{
-  if(logger_callback)
-    logger_callback(DEBUG, "reset");
-
-  off();
-  set_note(0);
-  d_active_note = d_note;
-  reset_midi();
-
-  if(logger_callback)
-    logger_callback(DEBUG, get_status().c_str());
-}
+#define VERSION "0.0.1"
 
 // - - - - - - - - - - - - - - - - - - - -
 // global singletons
@@ -596,8 +367,14 @@ int main(int argc, char **argv)
   g_ctrl.set_midi_send_callback(ui_midi_send);
   g_ctrl.set_logger_callback(ui_log);
 
+  cout << "starting midihold v"
+       << VERSION << endl << endl;
+
   try {
     if(argc == 1) {
+      cout << "Please select one from available controllers and run as command:" << endl
+           << "./midihold [n]" << endl
+           << endl;
       return listPorts();
     } else {
       try {
