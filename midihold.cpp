@@ -3,6 +3,7 @@
 // all rights w dupie
 
 #include <unistd.h>
+#include <stdint.h>
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -22,26 +23,29 @@ class hold_controller {
   // limits to make all posible values as square
   // highest midi note is G8 ( 127 ) but higher tones missing
   // to avoid disfunction of controller, last octave is disabled
-  static const unsigned int max_octave = 9;
-  static const unsigned int max_note = 119;
+  static const uint max_octave = 9;
+  static const uint max_note = 119;
+
+  typedef vector<uint8_t> midi_msg_t;
+  typedef void (*f_midi_send_t);
 
  private:
-  unsigned char d_note = 0;
-  unsigned char d_key = 0;
-  unsigned char d_octave = 0;
+  uint8_t d_note = 0;
+  uint8_t d_key = 0;
+  uint8_t d_octave = 0;
   bool d_on = false;
 
-  bool set_key_octave(unsigned char k, unsigned char o);
+  bool set_key_octave(uint8_t k, uint8_t o);
 
  public:
-  bool set_note(unsigned char n);
+  bool set_note(uint8_t n);
 
   void on() { d_on = true; }
   void off() { d_on = true; }
   bool is_on() { return d_on; }
 
-  bool set_key(unsigned char k) { return set_key_octave(k, d_octave); }
-  bool set_octave(unsigned char o) { return set_key_octave(d_key, o); }
+  bool set_key(uint8_t k) { return set_key_octave(k, d_octave); }
+  bool set_octave(uint8_t o) { return set_key_octave(d_key, o); }
 
   bool increment_note() { return set_note(d_note+1); }
   bool decrement_note() { return (d_note > 0 ) ? set_note(d_note-1) : false; }
@@ -50,9 +54,9 @@ class hold_controller {
   bool increment_octave() { return set_octave(d_octave+1); }
   bool decrement_octave() { return (d_octave > 0 ) ? set_octave(d_octave-1) : false; }
 
-  unsigned char note() const { return d_note; }
-  unsigned char key() const { return d_key; }
-  unsigned char octave() const { return d_octave; }
+  uint8_t note() const { return d_note; }
+  uint8_t key() const { return d_key; }
+  uint8_t octave() const { return d_octave; }
 
   const string key_human() const { return keys[d_key];  }
   int octave_human() const { return d_octave-2; }
@@ -66,7 +70,7 @@ const string hold_controller::keys[] = {
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "B#"
 };
 
-bool hold_controller::set_key_octave(unsigned char k, unsigned char o)
+bool hold_controller::set_key_octave(uint8_t k, uint8_t o)
 {
   if(k < 12 && o <= max_octave ) {
     d_key = k;
@@ -77,7 +81,7 @@ bool hold_controller::set_key_octave(unsigned char k, unsigned char o)
   return false;
 }
 
-bool hold_controller::set_note(unsigned char n)
+bool hold_controller::set_note(uint8_t n)
 {
   if (n <= max_note ) {
     d_note = n;
@@ -94,7 +98,7 @@ bool hold_controller::set_note(unsigned char n)
 // - - - - - - - - - - - - - - - - - - - -
 typedef struct {
   hold_controller ctrl;
-  unsigned char note_active = 0;
+  uint8_t note_active = 0;
 
   void reset() {
     ctrl.set_note(0);
@@ -122,20 +126,20 @@ void printControllerStatus()
        << endl;
 }
 
-void playMidi(RtMidiOut * midiout, unsigned char n)
+void playMidi(RtMidiOut * midiout, uint8_t n)
 {
   std::cout << "playMidi : " << (int)n << endl;
-  std::vector<unsigned char> message(3);
+  std::vector<uint8_t> message(3);
   message[0] = 144;
   message[1] = n;
   message[2] = 90;
   midiout->sendMessage( &message );
 }
 
-void stopMidi(RtMidiOut * midiout, unsigned char n)
+void stopMidi(RtMidiOut * midiout, uint8_t n)
 {
   std::cout << "stopMidi : " << (int)n << endl;
-  std::vector<unsigned char> message(3);
+  std::vector<uint8_t> message(3);
   message[0] = 128;
   message[1] = n;
   message[2] = 40;
@@ -146,10 +150,10 @@ void resetMidi(RtMidiOut * midiout)
 {
   std::cout << "resetMidi" << endl;
   midi_mem.reset();
-  std::vector<unsigned char> message(3);
+  std::vector<uint8_t> message(3);
   message[0] = 128;
   message[2] = 40;
-  for (unsigned char i=0; i<=127; i++){
+  for (uint8_t i=0; i<=127; i++){
     message[1] = i;
     midiout->sendMessage( &message );
   }
@@ -191,7 +195,7 @@ void doMidiNote(RtMidiOut * midiout)
 // - - - - - - - - - - - - - - - - - - - -
 // user interface
 // - - - - - - - - - - - - - - - - - - - -
-bool parseMidiNote(unsigned char * out_note, const string & key, const string & oct)
+bool parseMidiNote(uint8_t * out_note, const string & key, const string & oct)
 {
 
   cout << "parseMidiNote: key:" << key << " oct: " << oct << endl;
@@ -222,7 +226,7 @@ bool parseMidiNote(unsigned char * out_note, const string & key, const string & 
   }
 
   //parse key
-  unsigned char n = 0;
+  uint8_t n = 0;
   char ch = key[0];
   bool sharp = (key[1] == '#') ? true : false;
 
@@ -242,7 +246,7 @@ bool parseMidiNote(unsigned char * out_note, const string & key, const string & 
   if (sharp)
     n++;
 
-  unsigned char n0 = n;
+  uint8_t n0 = n;
 
   if (o > 0)
     n += (o * 12);
@@ -264,7 +268,7 @@ void doNote(RtMidiOut * midiout, const string & key, const string & oct)
 {
   cout << "doNote: key:" << key << " oct: " << oct << endl;
 
-  unsigned char n;
+  uint8_t n;
   if(parseMidiNote(&n, key, oct)){
     midi_mem.ctrl.set_note(n);
     doMidiNote(midiout);
@@ -293,7 +297,7 @@ void doNoteDown(RtMidiOut * midiout)
  doMidiNote(midiout);
 }
 
-void doKey(RtMidiOut * midiout, unsigned char key)
+void doKey(RtMidiOut * midiout, uint8_t key)
 {
   if (!midi_mem.ctrl.set_key(key)) {
     cout << "doKey - invalid value: " << (int)key << endl;
@@ -326,7 +330,7 @@ void doKeyDown(RtMidiOut * midiout)
   doMidiNote(midiout);
 }
 
-void doOct(RtMidiOut * midiout, unsigned char oct)
+void doOct(RtMidiOut * midiout, uint8_t oct)
 {
   if (!midi_mem.ctrl.set_octave(oct)) {
     cout << "doOct - invalid value: " << (int)oct << endl;
@@ -386,13 +390,13 @@ int listPorts()
   int ec = 0;
   RtMidiOut *midiout = new RtMidiOut();
   // Check available ports.
-  unsigned int nPorts = midiout->getPortCount();
+  uint nPorts = midiout->getPortCount();
   if ( nPorts == 0 ) {
     cerr << "No ports available!" << endl;
     ec = 1;
     goto cleanup;
   }
-  for(unsigned int i=0; i < nPorts; i++) {
+  for(uint i=0; i < nPorts; i++) {
     cout << "port[" << i << "]" << midiout->getPortName(i) << endl;
   }
 
@@ -479,27 +483,27 @@ bool doCmd(RtMidiOut * midiout, const string & cmd)
   else if(args.size() > 1 && args[0] == "key")
   {
     try {
-      unsigned int key = stoul(args[1]);
+      uint key = stoul(args[1]);
       if (key <= 0xFF) {
         doKey(midiout, key);
       } else {
         cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
       }
     } catch (invalid_argument const& ex) {
-      cerr << "Argument  '" << args[1] << "' is not unsigned integer" << endl;
+      cerr << "Argument  '" << args[1] << "' is not uinteger" << endl;
     }
   }
   else if(args.size() > 1 && args[0] == "oct")
   {
     try {
-      unsigned int oct = stoul(args[1]);
+      uint oct = stoul(args[1]);
       if (oct <= 0xFF) {
         doOct(midiout, oct);
       } else {
         cerr << "Argument  '" << args[1] << "' is > 0xFF" << endl;
       }
     } catch (invalid_argument const& ex) {
-      cerr << "Argument  '" << args[1] << "' is not unsigned integer" << endl;
+      cerr << "Argument  '" << args[1] << "' is not uinteger" << endl;
     }
   }
   else
@@ -509,11 +513,11 @@ bool doCmd(RtMidiOut * midiout, const string & cmd)
   return false;
 }
 
-int readStdIn(unsigned int port) {
+int readStdIn(uint port) {
   int ec=0;
   RtMidiOut *midiout = new RtMidiOut();
   // Check available ports.
-  unsigned int nPorts = midiout->getPortCount();
+  uint nPorts = midiout->getPortCount();
   if ( port >= nPorts ) {
     cerr << "Selected port [" << port << "] nPorts[ " << nPorts << "]" << endl;
     ec = 1;
@@ -543,7 +547,7 @@ int main(int argc, char **argv) {
       return listPorts();
     } else {
       try {
-        unsigned int port = stoul(argv[1]);
+        uint port = stoul(argv[1]);
         return readStdIn(port);
       } catch (invalid_argument const& ex) {
         cerr << "Argument  '" << argv[1] << "' is not integer" << endl;
