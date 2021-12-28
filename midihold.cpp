@@ -31,28 +31,10 @@ class hold_controller {
   unsigned char d_octave = 0;
   bool d_on = false;
 
-  bool set_key_octave(unsigned char k, unsigned char o)
-  {
-    if(k < 12 && o <= max_octave ) {
-      d_key = k;
-      d_octave = o;
-      d_note = d_key + ( 12 * d_octave );
-      return true;
-    }
-    return false;
-  }
+  bool set_key_octave(unsigned char k, unsigned char o);
 
  public:
-  bool set_note(unsigned char n)
-  {
-    if (n <= max_note ) {
-      d_note = n;
-      d_octave = d_note / 12;
-      d_key =  d_note % 12;
-      return true;
-    }
-    return false;
-  }
+  bool set_note(unsigned char n);
 
   void on() { d_on = true; }
   void off() { d_on = true; }
@@ -76,10 +58,40 @@ class hold_controller {
   int octave_human() const { return d_octave-2; }
 };
 
+// - - - - - - - - - - - - - - - - - - - -
+// implementation
+// - - - - - - - - - - - - - - - - - - - -
+
 const string hold_controller::keys[] = {
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "B#"
 };
 
+bool hold_controller::set_key_octave(unsigned char k, unsigned char o)
+{
+  if(k < 12 && o <= max_octave ) {
+    d_key = k;
+    d_octave = o;
+    d_note = d_key + ( 12 * d_octave );
+    return true;
+  }
+  return false;
+}
+
+bool hold_controller::set_note(unsigned char n)
+{
+  if (n <= max_note ) {
+    d_note = n;
+    d_octave = d_note / 12;
+    d_key =  d_note % 12;
+    return true;
+  }
+  return false;
+}
+
+
+// - - - - - - - - - - - - - - - - - - - -
+// structs
+// - - - - - - - - - - - - - - - - - - - -
 typedef struct {
   hold_controller ctrl;
   unsigned char note_active = 0;
