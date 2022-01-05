@@ -9,11 +9,9 @@
 #include <time.h>
 #include <rtmidi/RtMidi.h>
 
-#include "hold_controller.h"
+#include "arduino/midi_hold/hold_controller.h"
 
 using namespace std;
-
-#define VERSION "0.0.1"
 
 // - - - - - - - - - - - - - - - - - - - -
 // global singletons
@@ -32,6 +30,7 @@ const std::string gui_dtm()
   struct tm  tstruct;
   char       buf[80];
   tstruct = *localtime(&now);
+
   // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
   // for more information about date/time format
   strftime(buf, sizeof(buf), "%Y-%m-%d %X", &tstruct);
@@ -39,15 +38,19 @@ const std::string gui_dtm()
   return buf;
 }
 
-void ui_midi_send(vector<uint8_t> * message)
+void ui_midi_send(const uint8_t message[], uint8_t size)
 {
-  g_midiout.sendMessage(message);
+  std::vector<uint8_t> m(size);
+  for(uint8_t i=0; i<size; i++) {
+    m[i] = message[i];
+  }
+  g_midiout.sendMessage(&m);
 }
 
 void ui_log(hold_controller::log_levels_t priority, const char * message)
 {
-  const string & p = hold_controller::log_levels[priority];
-  printf("> [ %s ]%8s :: %s\n", gui_dtm().c_str(), p.c_str(), message);
+  const char * p = hold_controller::log_levels[priority];
+  printf("> [ %s ]%8s :: %s\n", gui_dtm().c_str(), p, message);
 }
 
 
@@ -368,7 +371,7 @@ int main(int argc, char **argv)
   g_ctrl.set_logger_callback(ui_log);
 
   cout << "starting midihold v"
-       << VERSION << endl << endl;
+       << HOLD_CONTROLLER_VERSION << endl << endl;
 
   try {
     if(argc == 1) {

@@ -2,20 +2,22 @@
 // (cc) by krgrWrgkmn 2021
 // all rights w dupie
 
-#include <sstream>
 #include "hold_controller.h"
+#include <stdio.h>
 
-using namespace std;
+#ifndef _countof
+#define _countof(x) (sizeof(x) / sizeof (x[0]))
+#endif
 
 // - - - - - - - - - - - - - - - - - - - -
 // implementation
 // - - - - - - - - - - - - - - - - - - - -
 
-const string hold_controller::keys[] = {
+const char* hold_controller::keys[] = {
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "B#"
 };
 
-const string hold_controller::log_levels[] = {
+const char* hold_controller::log_levels[] = {
  "DEBUG", "INFO", "WARNING", "ERROR"
 };
 
@@ -43,51 +45,43 @@ bool hold_controller::set_note(uint8_t n)
   return false;
 }
 
-string hold_controller::get_status() const
+const char * hold_controller::get_status()
 {
-  stringstream ss;
-
-  ss << "key: " << key_human()
-     << " [" << (int)key() << "]"
-     << " oct: " << octave_human()
-     << " [" << (int)octave() << "]"
-     << " note: [" << (int)note() << "]"
-     << " is_on: [" << (int)is_on() << "]"
-  ;
-  
-  return ss.str();
+  sprintf(d_status, "key: %s [%d] oct: %d [%d] note: [%d] is_on: [%d]",
+    key_human(), key(), octave_human(), octave(), note(), is_on());
+  return d_status;
 }
 
 void hold_controller::play_midi(uint8_t note)
 {
   if (logger_callback) {
-    stringstream ss;
-    ss << "play_midi: " << (int) note;
-    logger_callback(DEBUG, ss.str().c_str());
+    char buf[256];
+    sprintf(buf, "play_midi: %d", note);
+    logger_callback(DEBUG, buf);
   }
 
-  std::vector<uint8_t> message(3);
+  uint8_t message[3];
   message[0] = 144;
   message[1] = note;
   message[2] = 127;
   if(midi_send_callback)
-    midi_send_callback(&message);
+    midi_send_callback(message, _countof(message));
 }
 
 void hold_controller::stop_midi(uint8_t note)
 {
   if (logger_callback) {
-    stringstream ss;
-    ss << "stop_midi: " << (int) note;
-    logger_callback(DEBUG, ss.str().c_str());
+    char buf[256];
+    sprintf(buf, "stop_midi: %d", note);
+    logger_callback(DEBUG, buf);
   }
 
-  std::vector<uint8_t> message(3);
+  uint8_t message[3];
   message[0] = 128;
   message[1] = note;
   message[2] = 127;
   if(midi_send_callback)
-    midi_send_callback(&message);
+    midi_send_callback(message, _countof(message));
 }
 
 void hold_controller::reset_midi()
@@ -96,13 +90,13 @@ void hold_controller::reset_midi()
     logger_callback(DEBUG, "reset_midi");
   }
 
-  std::vector<uint8_t> message(3);
+  uint8_t message[3];
   message[0] = 128;
   message[2] = 40;
   for (uint8_t i=0; i<=127; i++){
     message[1] = i;
     if(midi_send_callback)
-      midi_send_callback(&message);
+      midi_send_callback(message, _countof(message));
   }
 }
 
@@ -116,7 +110,7 @@ void hold_controller::on()
   play_midi(d_active_note);
 
   if(logger_callback)
-    logger_callback(INFO, get_status().c_str());
+    logger_callback(INFO, get_status());
 }
 
 void hold_controller::off()
@@ -128,7 +122,7 @@ void hold_controller::off()
   d_on = false;
 
   if(logger_callback)
-    logger_callback(INFO, get_status().c_str());
+    logger_callback(INFO, get_status());
 }
 
 void hold_controller::change_note()
@@ -145,7 +139,7 @@ void hold_controller::change_note()
   }
 
   if(logger_callback)
-    logger_callback(INFO, get_status().c_str());
+    logger_callback(INFO, get_status());
 }
 
 void hold_controller::reset()
@@ -159,6 +153,5 @@ void hold_controller::reset()
   reset_midi();
 
   if(logger_callback)
-    logger_callback(DEBUG, get_status().c_str());
+    logger_callback(DEBUG, get_status());
 }
-
