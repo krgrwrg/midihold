@@ -8,7 +8,7 @@
 
 #include "hold_controller.h"
 
-#define VERSION "0.0.2"
+#define VERSION HOLD_CONTROLLER_VERSION
 
 // uncoment if you want to use serial for debug
 // midi can't work together with serial for debug
@@ -18,16 +18,21 @@
 // global defs / vars
 // - - - - - - - - - - - - - - - - - - - -
 
-#define HC hold_controller
 MIDI_CREATE_DEFAULT_INSTANCE();
 
+// hold controller lib
+#define HC hold_controller
 hold_controller CTRL;
 
 // display
-int CLK = 7;
-int DIO = 8;
+#define PIN_TM_CLK A0
+#define PIN_TM_DIO A1
+#define PIN_TM_5V  11
 
-TM1637Display TM(CLK, DIO);
+// brightness A number from 0 (lowes brightness) to 7 (highest brightness)
+#define TM_BRIGHTNESS 0
+
+TM1637Display TM(PIN_TM_CLK, PIN_TM_DIO);
 
 // rotary controller
 // Define the IO Pins Used
@@ -37,11 +42,13 @@ TM1637Display TM(CLK, DIO);
 #define PIN_ROTARY_1_5V     5   // Set to HIGH to be the 5V pin for the Rotary Encoder
 #define PIN_ROTARY_1_GND    6   // Set to LOW to be the GND pin for the Rotary Encoder
 
-#define PIN_ROTARY_2_CLK   11   // Used for generating interrupts using CLK signal
-#define PIN_ROTARY_2_DAT   12   // Used for reading DT signal
-//#define PIN_ROTARY_2_SW    XX   // Used for the Rotary push button switch
+#define PIN_ROTARY_2_CLK    7   // Used for generating interrupts using CLK signal
+#define PIN_ROTARY_2_DAT    8   // Used for reading DT signal
+#define PIN_ROTARY_2_SW    12   // Used for the Rotary push button switch
 #define PIN_ROTARY_2_5V     9   // Set to HIGH to be the 5V pin for the Rotary Encoder
-//#define PIN_ROTARY_2_GND    X   // Set to LOW to be the GND pin for the Rotary Encoder
+#define PIN_ROTARY_2_GND   10   // Set to LOW to be the GND pin for the Rotary Encoder
+
+#define ROTARY_PRESS_TICKS 2000
 
 
 // - - - - - - - - - - - - - - - - - - - -
@@ -79,16 +86,23 @@ void arduino_log(hold_controller::log_levels_t priority, const char * message)
 // display
 // - - - - - - - - - - - - - - - - - - - -
 
-// brightness A number from 0 (lowes brightness) to 7 (highest brightness)
-uint8_t TM_BRIGHTNESS = 0;
-
 // data for each digit
 uint8_t TM_DT[] = {0,0,0,0,0};
 
-void init_display()
+void clear_display()
 {
   TM.clear();
+  delay(1000);
   TM.setBrightness(TM_BRIGHTNESS);
+}
+
+void init_display()
+{
+  // Set the 5V pin for display
+  pinMode(PIN_TM_5V, OUTPUT);
+  digitalWrite(PIN_TM_5V, HIGH);
+
+  clear_display();
 }
 
 void update_display()
@@ -119,8 +133,9 @@ int rotary_2_B = 0;
 
 // OneButton class handles Debounce and detects button press
 OneButton rotary_1_btn(PIN_ROTARY_1_SW, HIGH);      // Rotary Select button
+OneButton rotary_2_btn(PIN_ROTARY_2_SW, HIGH);      // Rotary Select button
 
-void rotary_1_click()
+void rotary_click()
 {
   if (CTRL.is_on())
     CTRL.off();
@@ -131,8 +146,9 @@ void rotary_1_click()
 }
 
 
-void rotary_1_long_press()
+void rotary_long_press()
 {
+  clear_display();
   CTRL.reset();
   update_display();
 }
@@ -153,9 +169,9 @@ void rotary_1_init()
   rotary_1_A = digitalRead(PIN_ROTARY_1_CLK);
 
   // Define the functions for Rotary Encoder Click and Long Press
-  rotary_1_btn.attachClick(&rotary_1_click);
-  rotary_1_btn.attachLongPressStart(&rotary_1_long_press);
-  rotary_1_btn.setPressTicks(2000);
+  rotary_1_btn.attachClick(&rotary_click);
+  rotary_1_btn.attachLongPressStart(&rotary_long_press);
+  rotary_1_btn.setPressTicks(ROTARY_PRESS_TICKS);
 }
 
 void rotary_2_init()
@@ -163,15 +179,20 @@ void rotary_2_init()
   // Set the Directions of the I/O Pins
   pinMode(PIN_ROTARY_2_CLK, INPUT_PULLUP);
   pinMode(PIN_ROTARY_2_DAT, INPUT_PULLUP);
-//pinMode(PIN_ROTARY_2_SW, INPUT_PULLUP);
-//pinMode(PIN_ROTARY_2_GND, OUTPUT);
+  pinMode(PIN_ROTARY_2_SW, INPUT_PULLUP);
+  pinMode(PIN_ROTARY_2_GND, OUTPUT);
   pinMode(PIN_ROTARY_2_5V, OUTPUT);
 
   // Set the 5V and GND pins for the Rotary Encoder
-//digitalWrite(PIN_ROTARY_2_GND, LOW);
+  digitalWrite(PIN_ROTARY_2_GND, LOW);
   digitalWrite(PIN_ROTARY_2_5V, HIGH);
 
   rotary_2_A = digitalRead(PIN_ROTARY_2_CLK);
+
+  // Define the functions for Rotary Encoder Click and Long Press
+  rotary_2_btn.attachClick(&rotary_click);
+  rotary_2_btn.attachLongPressStart(&rotary_long_press);
+  rotary_2_btn.setPressTicks(ROTARY_PRESS_TICKS);
 }
 
 void rotary_1_read()
@@ -193,6 +214,7 @@ void rotary_1_read()
 
 void rotary_2_read()
 {
+  rotary_2_btn.tick();
   rotary_2_B = digitalRead(PIN_ROTARY_2_CLK);
   if (rotary_2_A != rotary_2_B) {
     if (digitalRead(PIN_ROTARY_2_DAT) != rotary_2_B) {
@@ -223,7 +245,6 @@ void setup() {
   
   CTRL.set_midi_send_callback(arduino_midi_send);
   CTRL.set_logger_callback(arduino_log);
-  //CTRL.reset();
   
   init_display();
   update_display();
@@ -232,31 +253,10 @@ void setup() {
   rotary_1_init();
   rotary_2_init();
   arduino_log(HC::INFO, "midi_hold v" VERSION " started");
-
 }
 
-int sec=0;
 void loop() {
-  // put your main code here, to run repeatedly:
-
-  
-  /*
-  MIDI.sendNoteOn(60, 127, 1);
-  delay(1000);
-  MIDI.sendNoteOff(60, 0, 1);
-  delay(1000);
-  
-  sec++;
-  dp[0] = sec;
-  dp[1] = sec+1;
-  dp[2] = sec+2;
-  dp[3] = sec+3;
-  update_display();
-  */
-  
-  
   rotary_1_read();
   rotary_2_read();
   refresh_display();
-  
 }

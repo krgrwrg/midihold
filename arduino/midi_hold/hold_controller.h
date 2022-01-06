@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 
-#define HOLD_CONTROLLER_VERSION "1.0.0"
+#define HOLD_CONTROLLER_VERSION "1.0.1"
 
 class hold_controller {
  public:
